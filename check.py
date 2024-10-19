@@ -1,18 +1,34 @@
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from gtts import gTTS
 import os
 
-# Text to be converted to speech
-text = "Congratulations for winning datahack"
+app = FastAPI()
 
-# Language in which you want to convert
-language = 'en'
+# Define a model for the input data
+class TextToSpeechRequest(BaseModel):
+    text: str
+    language: str = "en"
 
-# Passing the text and language to the engine, slow=False makes the speech faster
-tts = gTTS(text=text, lang=language, slow=False)
+@app.post("/text-to-speech/")
+async def text_to_speech(request: TextToSpeechRequest):
+    # Text-to-speech conversion
+    tts = gTTS(text=request.text, lang=request.language, slow=False)
+    
+    # Save the audio file
+    audio_file = "output.mp3"
+    tts.save(audio_file)
+    
+    # Serve the file as a response
+    return FileResponse(audio_file, media_type="audio/mpeg", filename=audio_file)
 
-# Saving the speech to a file
-tts.save("output.mp3")
+# Optional: Endpoint to test if the API is running
+@app.get("/")
+def read_root():
+    return {"message": "Text-to-Speech API is running!"}
 
-# Playing the speech (optional)
-os.system("start output.mp3")  # For Windows
-# os.system("mpg321 output.mp3")  # For Linux
+if __name__ == "__main__":
+    # Run the server
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,5 +1,5 @@
-fitz 
-python-pptx 
-python-docx 
+pymupdf 
 opencv-python 
-opencv-python-headless
+pillow 
+python-pptx 
+python-docx
