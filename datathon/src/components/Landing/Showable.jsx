@@ -5,13 +5,15 @@ import Footer from '../Utilities/footer';
 const Showable = ({ children }) => {
   return (
     <>
-      <Header />
-      <div>
-        {children} {/* This will render any child components passed to Showable */}
-      </div>
-      <Footer />
+      <div className='w-screen h-screen '>
+        <Header />
+        <div>
+          {children} {/* This will render any child components passed to Showable */}
+        </div>
+        <Footer />
+      </div> {/* Fixed closing tag here */}
     </>
   );
-};
+}
 
 export default Showable;
