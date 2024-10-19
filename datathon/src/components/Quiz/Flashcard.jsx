@@ -1,18 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FlashCardArray } from 'react-flashcards';
 import Showable from '../Landing/Showable';
+import { db } from '../../../firebaseConfig'; // Adjust the path to your firebaseConfig file
+import { addDoc, collection, getDocs } from 'firebase/firestore';
 
-// Flashcard data
-const flashcards = [
-  { id: 1, front: 'What is the powerhouse of the cell?', back: 'Mitochondria' },
-  { id: 2, front: 'What is the process by which plants make their own food?', back: 'Photosynthesis' },
-  { id: 3, front: 'What method in JavaScript is used to stop further propagation of an event during its execution?', back: 'event.stopPropagation()' },
-  { id: 4, front: 'What does the acronym DOM stand for in web development?', back: 'Document Object Model' },
-  { id: 5, front: 'Who developed the theory of evolution by natural selection?', back: 'Charles Darwin' },
-  { id: 6, front: 'What is the term for a word that is similar in meaning to another word?', back: 'Synonym' },
-  { id: 7, front: 'Which part of speech describes a noun or pronoun?', back: 'Adjective' },
-];
-
+// Flatcard component
 const Flatcard = () => {
   const [inputType, setInputType] = useState('text');
   const [formData, setFormData] = useState({
@@ -23,6 +15,7 @@ const Flatcard = () => {
   });
   const [isFormDisabled, setIsFormDisabled] = useState(false);
   const [formSubmitted, setFormSubmitted] = useState(false);
+  const [flashcards, setFlashcards] = useState([]); // State to store flashcards from Firestore
 
   // Handle form field changes
   const handleChange = (e) => {
@@ -37,19 +30,39 @@ const Flatcard = () => {
   };
 
   // Handle form submission
-  const generateClicked = (e) => {
+  const generateClicked = async (e) => {
     e.preventDefault();
     setIsFormDisabled(true); // Disable form after submission
-    console.log('Form data:', formData);
-    setFormSubmitted(true); // Display submission success message
 
-    // Reset form after 2 seconds (for demo purposes)
-    setTimeout(() => {
+    // Save flashcard data to Firestore
+    try {
+      const res = await addDoc(collection(db, 'flashcards'), {
+        numCards: formData.numCards,
+        content: formData.content,
+        inputType: formData.inputType,
+        outputType: formData.outputType,
+      });
+      console.log(res)
+      setFormSubmitted(true);
+      fetchFlashcards(); // Fetch flashcards after successful submission
+    } catch (error) {
+      console.error("Error adding document: ", error);
+    } finally {
       setIsFormDisabled(false);
-      setFormSubmitted(false);
-      setFormData({ numCards: 0, inputType: 'text', outputType: 'text', content: '' });
-    }, 2000);
+    }
   };
+
+  // Fetch flashcards from Firestore
+  const fetchFlashcards = async () => {
+    const querySnapshot = await getDocs(collection(db, 'flashcards'));
+    const cards = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setFlashcards(cards);
+  };
+
+  // Fetch flashcards when component mounts
+  useEffect(() => {
+    fetchFlashcards();
+  }, []);
 
   return (
     <Showable>
@@ -68,6 +81,7 @@ const Flatcard = () => {
               value={formData.numCards}
               onChange={handleChange}
               disabled={isFormDisabled}
+              min="0" // Ensure no negative numbers
             />
           </div>
 

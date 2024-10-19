@@ -4,6 +4,7 @@ import Home from './components/Landing/Home';
 import Flatcard from './components/Quiz/Flashcard';
 import { ButtonDemo } from './components/Quiz/Button';
 import Quiz from './components/Quiz/Quiz';
+
 const App = () => {
   return (
     <Router>
