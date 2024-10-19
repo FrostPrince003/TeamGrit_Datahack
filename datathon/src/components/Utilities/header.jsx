@@ -38,19 +38,22 @@ const Header = () => {
 
             {/* Action Buttons */}
             <div className="flex space-x-4">
-              <button
-                type="button"
-                className="bg-white text-teal-400 border-2 border-teal-400  w-28 hover:to-orange-500 rounded-md px-4 py-2"
-              >
-                Login
-              </button>
-              <button
-                type="button"
-                className="relative w-28 px-4 border-2 border-white py-2 text-white bg-transparent border-2 border-transparent rounded-md overflow-hidden group"
-              >
-                <span className="absolute inset-0 bg-gradient-to-r from-teal-400 to-blue-500 rounded-md transition duration-300 ease-in-out group-hover:bg-gradient-to-l group-hover:from-pink-500 group-hover:to-orange-500"></span>
-                <span className="relative z-10">Register</span>
-              </button>
+             {/* Login Button */}
+<button
+  type="button"
+  className="bg-white text-teal-400 border-2 border-teal-400 w-28 hover:bg-gradient-to-r hover:from-teal-400 hover:to-blue-500 hover:text-white hover:border-white rounded-md px-4 py-2 transition duration-300 ease-in-out"
+>
+  Login
+</button>
+
+{/* Register Button */}
+<button
+  type="button"
+  className="bg-gradient-to-r  from-teal-400 to-blue-500 text-white border-white rounded-md px-4 py-2 transition duration-300 ease-in-out hover:bg-white hover:text-teal-400 border-2 hover:border-teal-400 w-28 "
+>
+  Register
+</button>
+
             </div>
           </div>
         </div>
