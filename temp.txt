@@ -1,0 +1,3 @@
+color1=#2fb2ac
+color2 = #fafdfc
+color3 = #fdd21b
