@@ -1,0 +1,5 @@
+fitz 
+python-pptx 
+python-docx 
+opencv-python 
+opencv-python-headless
