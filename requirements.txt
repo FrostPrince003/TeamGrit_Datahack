@@ -1,0 +1,5 @@
+pymupdf 
+opencv-python 
+pillow 
+python-pptx 
+python-docx
