@@ -1,23 +1,79 @@
 import os
 import io
-import fitz  # PyMuPDF
+import fitz  # PyMuPDF for PDF processing
 import cv2  # OpenCV for contour detection in images
 import numpy as np
 from PIL import Image
-from pptx import Presentation
-from docx import Document
-from fastapi import FastAPI, UploadFile, File
+from pptx import Presentation  # python-pptx for PPTX processing
+from docx import Document  # python-docx for DOCX processing
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
-import google.generativeai as genai
-from dotenv import load_dotenv  # Import dotenv to load environment variables
-
-# Load environment variables from .env file
+from pydantic import BaseModel
+from youtube_transcript_api import YouTubeTranscriptApi  # YouTube transcript extraction
+import google.generativeai as genai  # Google Gemini AI
+from dotenv import load_dotenv  # dotenv for environment variable management
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+# Load environment variables
 load_dotenv()
 
+# Ensure API key is set correctly from environment variables
+api_key = os.getenv("YOUR_API_KEY_HERE")
+genai.configure(api_key=api_key)  # Configures the Google Gemini API
+
+# FastAPI app instance
 app = FastAPI()
 
-# Ensure your API key is correctly set in your environment variables
-genai.configure(api_key=os.getenv("YOUR_API_KEY_HERE"))  # Use the correct environment variable name
+origins = [
+    "http://localhost:5173",  # React frontend, for example
+    "https://myfrontendapp.com",  # Production frontend
+]
+
+# Add CORS middleware to the FastAPI app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # List of allowed origins
+    allow_credentials=True,  # Allows cookies and credentials
+    allow_methods=["*"],  # Allows all methods (GET, POST, PUT, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
+model = genai.GenerativeModel("gemini-1.5-flash")
+# Default prompt template for quiz generation
+prompt_template = """
+You are a quiz agent. Generate a set of three questions from the text provided, one easy, one medium, and one hard.
+Return the result in JSON format.
+"""
+
+# Function to extract transcript from YouTube video using YouTubeTranscriptApi
+def extract_transcript(youtube_video_url):
+    try:
+        video_id = youtube_video_url.split("=")[1]
+        transcript_data = YouTubeTranscriptApi.get_transcript(video_id)
+        transcript = " ".join([item["text"] for item in transcript_data])
+        return transcript
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error extracting transcript: {str(e)}")
+
+# Function to generate content using Google Gemini AI
+def generate_gemini_content(transcript_text, prompt):
+    try:
+        
+        response = model.generate_content(prompt + transcript_text)
+        return response.text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating content: {str(e)}")
+
+# Route to process YouTube link and return detailed notes
+@app.post("/generate_notes/")
+async def generate_notes(youtube_video: BaseModel):
+    try:
+        transcript_text = extract_transcript(youtube_video.youtube_url)
+        if not transcript_text:
+            raise HTTPException(status_code=404, detail="Transcript not found")
+        summary = generate_gemini_content(transcript_text, prompt_template)
+        return {"detailed_notes": summary}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Function to extract text from PDF
 def extract_text_from_pdf(pdf_path):
@@ -35,14 +91,12 @@ def extract_images_from_pdf(pdf_path):
     for page_num in range(len(doc)):
         page = doc.load_page(page_num)
         images = page.get_images(full=True)
-        
         for img_index, img in enumerate(images):
             xref = img[0]
             base_image = doc.extract_image(xref)
             image_bytes = base_image["image"]
             img_ext = base_image["ext"]
             image = Image.open(io.BytesIO(image_bytes))
-            
             image_path = f"pdf_image_{page_num + 1}_{img_index + 1}.{img_ext}"
             image.save(image_path)
             image_paths.append(image_path)
@@ -58,22 +112,6 @@ def extract_text_from_ppt(ppt_path):
                 text += shape.text
     return text
 
-# Function to extract images from PPT
-def extract_images_from_ppt(ppt_path):
-    prs = Presentation(ppt_path)
-    image_paths = []
-    for slide_num, slide in enumerate(prs.slides):
-        for shape in slide.shapes:
-            if hasattr(shape, "image"):
-                image = shape.image
-                img_bytes = io.BytesIO(image.blob)
-                img = Image.open(img_bytes)
-                img_ext = image.ext
-                image_path = f"ppt_image_{slide_num + 1}_{len(image_paths) + 1}.{img_ext}"
-                img.save(image_path)
-                image_paths.append(image_path)
-    return image_paths
-
 # Function to extract text from DOCX
 def extract_text_from_docx(docx_path):
     doc = Document(docx_path)
@@ -82,94 +120,62 @@ def extract_text_from_docx(docx_path):
         text += para.text
     return text
 
-# Function to extract images from DOCX
-def extract_images_from_docx(docx_path):
-    doc = Document(docx_path)
-    image_paths = []
-    for rel in doc.part.rels.values():
-        if "image" in rel.target_ref:
-            img = rel.target_part.blob
-            img_ext = rel.target_ref.split(".")[-1]
-            img_name = f"docx_image_{len(image_paths) + 1}.{img_ext}"
-            with open(img_name, "wb") as f:
-                f.write(img)
-            image_paths.append(img_name)
-    return image_paths
-
-# Function to detect contours in images
+# Function to detect contours in images (optional)
 def detect_contours_in_image(image_path):
     image = cv2.imread(image_path)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
-
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Simply return the count of contours found without cropping
-    return len(contours)
+    return len(contours)  # Return the count of contours found
 
-# Function to generate questions using Gemini with options for quiz or flashcard
+# Function to generate questions using Google Gemini AI, with options for quiz or flashcards
 def generate_questions_from_text(extracted_text, question_type="quiz"):
     model = genai.GenerativeModel("gemini-pro")
-    subject_prompt="Which subject does this text belong to ? answer in just one word, only answer the subject name"
-    init_prompt=extracted_text+subject_prompt
-    init_response=model.generate_content(init_prompt)
+    subject_prompt = "Which subject does this text belong to? Answer in just one word: "
+    init_prompt = extracted_text + subject_prompt
+    init_response = model.generate_content(init_prompt)
+    subject = init_response.text.strip()
 
     if question_type == "quiz":
-        # For quiz, generate multiple-choice questions (MCQs)
         prompt = (
-            f"Assume you are a {init_response} teacher. Based on the following text, generate three multiple-choice questions (MCQs) (1 easy question , 1 medium question and 1 hard question , so total three questions) with four answer choices each.The questions can be of any type link fill in the blanks , true false, or any other type, depending on what type suits the subject. Not just true or false or fill in the blanks , you can give any kind of questions but should have options to choose "
-            "Also indicate the correct answer:\n\n"
+            f"Assume you are a {subject} teacher. Based on the following text, generate three multiple-choice questions "
+            "(1 easy, 1 medium, and 1 hard) with four answer choices each. The questions can be of any type like fill "
+            "in the blanks, true/false, or multiple-choice. Indicate the correct answer. Format everything in JSON.\n\n"
         )
     else:
-        # For flashcards, generate open-ended questions
         prompt = (
-            f"Assume you are a {init_response} teacher. Based on the following text, generate three questions (1 easy question , 1 medium question and 1 hard question , so total three questions) . The questions can be of any type link fill in the blanks , true false, or any other type, depending on what type suits the subject. Not just true or false or fill in the blanks , you can give any kind of questions"
-            "Also provide the correct answer:\n\n"
+            f"Assume you are a {subject} teacher. Based on the following text, generate three open-ended questions "
+            "(1 easy, 1 medium, and 1 hard). Indicate the correct answers. Format everything in JSON.\n\n"
         )
 
-    full_prompt = prompt + extracted_text
-    response = model.generate_content(full_prompt)
-    
+    response = model.generate_content(prompt + extracted_text)
     return response.text
 
-# Main function to process documents
+# Main function to process the document and extract text based on file type
 def process_document(file_path):
     _, file_extension = os.path.splitext(file_path)
     file_extension = file_extension.lower()
 
     extracted_text = ""
-    image_paths = []
 
-    # Based on the file extension, call the appropriate functions
     if file_extension == ".pdf":
         extracted_text = extract_text_from_pdf(file_path)
-        image_paths = extract_images_from_pdf(file_path)
-
     elif file_extension == ".pptx":
         extracted_text = extract_text_from_ppt(file_path)
-        image_paths = extract_images_from_ppt(file_path)
-
     elif file_extension == ".docx":
         extracted_text = extract_text_from_docx(file_path)
-        image_paths = extract_images_from_docx(file_path)
-
     elif file_extension in [".png", ".jpg", ".jpeg"]:
         # Directly send image to Gemini; you may need a separate image processing function
         return generate_questions_from_text("Image received, no text extracted.")
-    
     else:
         raise ValueError("Unsupported file format!")
 
-    # Detect contours in all extracted images (optional)
-    for image_path in image_paths:
-        detect_contours_in_image(image_path)
-
     return extracted_text
 
-# FastAPI endpoint to upload files
-@app.post("/upload/")
-async def upload_file(file: UploadFile = File(...)):
+# FastAPI endpoint to handle file uploads and return quiz questions
+@app.post("/upload/document/")
+async def upload_and_generate_questions(file: UploadFile = File(...), question_type: str = "quiz"):
     file_location = f"temp/{file.filename}"
     os.makedirs("temp", exist_ok=True)
     with open(file_location, "wb") as f:
@@ -177,50 +183,62 @@ async def upload_file(file: UploadFile = File(...)):
 
     try:
         extracted_text = process_document(file_location)
-        return JSONResponse(content={"extracted_text": extracted_text})
-
+        questions = generate_questions_from_text(extracted_text, question_type=question_type)
+        return JSONResponse(content={"generated_questions": questions})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=400)
     finally:
         os.remove(file_location)
 
-# Endpoint for quiz
+@app.post("/upload/image/")
+async def image_flashcard(image_path: str = "E:\\djs_hackathon\\TeamGrit_Datahack\\docx_image_2.png"):
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found.")
+
+    try:
+        # Prepare the prompt based on the image
+        prompt = (
+            f"Assume you are a teacher. Based on the following image, generate one open-ended question "
+            "and indicate the correct answer. Format everything in JSON.\n\n"
+        )
+
+        # Generate question using the model
+        response = model.generate_content(prompt)
+        generated_question = response.text
+        
+        # Return the generated question and the image URL
+        return {
+            "generated_question": generated_question,
+            "image_url": f"http://192.168.254.146:5000/get_image/?image_path={image_path}"  # Direct link to the image
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/get_image/")
+async def get_image(image_path: str):
+    # Ensure the path is correctly formatted for your OS
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found.")
+    
+    return FileResponse(image_path)
+
+
+# Endpoint for quiz generation
 @app.post("/upload/quiz/")
 async def upload_quiz(file: UploadFile = File(...)):
-    file_location = f"temp/{file.filename}"
-    os.makedirs("temp", exist_ok=True)
-    with open(file_location, "wb") as f:
-        f.write(await file.read())
+    return await upload_and_generate_questions(file, question_type="quiz")
 
-    try:
-        extracted_text = process_document(file_location)
-        questions = generate_questions_from_text(extracted_text, question_type="quiz")
-        return JSONResponse(content={"quiz_questions": questions})
-
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=400)
-    finally:
-        os.remove(file_location)
-
-# Endpoint for flashcard
+# Endpoint for flashcard generation
 @app.post("/upload/flashcard/")
 async def upload_flashcard(file: UploadFile = File(...)):
-    file_location = f"temp/{file.filename}"
-    os.makedirs("temp", exist_ok=True)
-    with open(file_location, "wb") as f:
-        f.write(await file.read())
+    return await upload_and_generate_questions(file, question_type="flashcard")
 
-    try:
-        extracted_text = process_document(file_location)
-        questions = generate_questions_from_text(extracted_text, question_type="flashcard")
-        return JSONResponse(content={"flashcard_questions": questions})
-
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=400)
-    finally:
-        os.remove(file_location)
+# Simple GET request to verify server is running
+@app.get("/get")
+def check_status():
+    return "Server is running."
 
 # Run the application
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="192.168.254.146", port=5000)
